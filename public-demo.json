@@ -1,0 +1,80 @@
+{
+  "mcp_url": "https://charles-warrant-qualities-generic.trycloudflare.com/mcp",
+  "health_url": "https://charles-warrant-qualities-generic.trycloudflare.com/health",
+  "started": "2026-09-25T16:01:26Z",
+  "expected_until": "2026-09-25T18:01:26Z",
+  "run_id": "36157987038",
+  "commit": "eab85219f0b7a6d5723c576a1389726365b69853",
+  "verification": {
+    "base_url": "https://charles-warrant-qualities-generic.trycloudflare.com",
+    "checks": {
+      "health": {
+        "status": 200,
+        "body": {
+          "status": "ok",
+          "service": "trading-mcp",
+          "version": "0.1.0",
+          "data_provider": "yahoo",
+          "auth_required": true
+        }
+      },
+      "unauthenticated_rejected": {
+        "status": 401,
+        "ok": true
+      },
+      "tools_list": {
+        "count": 33,
+        "missing": []
+      },
+      "call:get_quote": {
+        "ok": true,
+        "seconds": 2.22,
+        "ticker": "NVDA",
+        "price": 225.389999,
+        "change_percent": 0.360672,
+        "timestamp": "2026-09-25T16:01:00+00:00",
+        "source": "yahoo_finance (yfinance, unofficial)"
+      },
+      "call:get_historical_data": {
+        "ok": true,
+        "seconds": 0.44,
+        "last_bar": {
+          "timestamp": "2026-09-25T16:00:00+00:00",
+          "open": 83793.59375,
+          "high": 83876.078125,
+          "low": 83790.453125,
+          "close": 83863.726562,
+          "volume": 0.0
+        }
+      },
+      "call:calculate_rsi": {
+        "ok": true,
+        "seconds": 0.33,
+        "latest": {
+          "timestamp": "2026-09-25T04:00:00+00:00",
+          "rsi_14": 56.543236,
+          "close": 770.700012
+        }
+      },
+      "call:multi_timeframe_analysis": {
+        "ok": true,
+        "seconds": 0.36,
+        "trends": {
+          "15m": "sideways",
+          "1h": "up",
+          "1d": "up"
+        }
+      },
+      "call:backtest_strategy": {
+        "ok": true,
+        "seconds": 0.3,
+        "total_return": 0.805465,
+        "sharpe_ratio": 0.785448,
+        "max_drawdown": -0.285264,
+        "number_of_trades": 14
+      }
+    },
+    "mcp_seconds": 3.92,
+    "passed": true
+  }
+}
