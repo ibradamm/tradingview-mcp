@@ -44,7 +44,7 @@ jobs:
         if: steps.cfg.outputs.enabled == 'true'
         run: |
           uv venv --python 3.12
-          uv pip install -e . huggingface_hub
+          uv pip install -e ".[dev]" huggingface_hub
       - name: Deploy and verify
         if: steps.cfg.outputs.enabled == 'true'
         run: .venv/bin/python scripts/deploy_hf.py
