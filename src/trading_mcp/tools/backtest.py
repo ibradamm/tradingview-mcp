@@ -7,11 +7,19 @@ from typing import Any
 from mcp.server.mcpserver import MCPServer
 from mcp_types import ToolAnnotations
 
-from trading_mcp.backtest.engine import BacktestConfig, downsample, run_backtest
+from trading_mcp.backtest.engine import BacktestConfig, run_backtest
 from trading_mcp.backtest.strategies import STRATEGIES, build_signals
 from trading_mcp.backtest.walk_forward import walk_forward_rules
 from trading_mcp.data.base import Timeframe
-from trading_mcp.tools.common import BACKTEST_WARNINGS, RESEARCH_DISCLAIMER, clean, load_ohlcv, safe_tool, source_info
+from trading_mcp.tools.common import (
+    BACKTEST_WARNINGS,
+    RESEARCH_DISCLAIMER,
+    clean,
+    equity_records,
+    load_ohlcv,
+    safe_tool,
+    source_info,
+)
 
 ANNOTATIONS = ToolAnnotations(readOnlyHint=False, destructiveHint=False, openWorldHint=True)
 
@@ -64,7 +72,7 @@ def backtest_strategy(
         "config": config.model_dump(),
         "statistics": res.stats,
         "benchmark": res.benchmark,
-        "equity_curve": [{"timestamp": t, "equity": v} for t, v in downsample(res.equity).items()],
+        "equity_curve": equity_records(res.equity),
         "trades": res.trades[-max(0, min(int(max_trades_returned), 500)):],
         "trades_total": len(res.trades),
         "notes": res.notes,
@@ -102,7 +110,7 @@ def walk_forward_backtest(
     tf = Timeframe(df.attrs["timeframe"])
     out = walk_forward_rules(df, strategy, config, tf.periods_per_year, train_bars, validation_bars, test_bars,
                              param_grid, fixed_params)
-    out["equity_curve_oos"] = [{"timestamp": t, "equity": v} for t, v in downsample(out["equity_curve_oos"]).items()]
+    out["equity_curve_oos"] = equity_records(out["equity_curve_oos"])
     payload = clean({"meta": source_info(df), "strategy": strategy, "config": config.model_dump(), **out,
                      "warnings": BACKTEST_WARNINGS, "disclaimer": RESEARCH_DISCLAIMER})
     payload["run_id"] = _persist("walk_forward", payload)

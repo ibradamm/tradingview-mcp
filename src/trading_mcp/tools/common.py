@@ -116,6 +116,13 @@ def frame_to_records(df: pd.DataFrame | pd.Series, limit: int | None = None) -> 
     return clean(records)
 
 
+def equity_records(equity: pd.Series, max_points: int = 250) -> list[dict[str, Any]]:
+    """Downsampled equity curve as [{timestamp, equity}] for transport."""
+    from trading_mcp.backtest.engine import downsample
+
+    return [{"timestamp": t, "equity": v} for t, v in downsample(equity, max_points).items()]
+
+
 def source_info(df: pd.DataFrame) -> dict[str, Any]:
     return clean(
         {
