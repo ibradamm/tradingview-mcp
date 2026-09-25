@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Install
+        run: |
+          uv venv --python 3.12
+          uv pip install -e ".[dev]"
+      - name: Lint
+        run: .venv/bin/ruff check src tests
+      - name: Unit tests (offline, synthetic data)
+        run: .venv/bin/pytest -m "not live"
+      - name: Live data tests (real Yahoo Finance data, informative)
+        continue-on-error: true
+        run: .venv/bin/pytest -m live -v
