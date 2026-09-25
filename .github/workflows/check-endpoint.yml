@@ -1,0 +1,32 @@
+# Independent reachability check of a deployed endpoint from a fresh GitHub runner.
+# Unauthenticated checks only (this repository is public, so no token is passed):
+#   GET /health must return 200, POST /mcp without token must return 401.
+name: Check public endpoint
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "https://host (without /mcp)"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BASE_URL: ${{ inputs.base_url }}
+    steps:
+      - name: Check
+        run: |
+          [[ "$BASE_URL" =~ ^https://[A-Za-z0-9.-]+$ ]] || { echo "base_url must be https://host"; exit 1; }
+          echo "TLS / certificate:"
+          curl -sv -o /dev/null "$BASE_URL/health" 2>&1 | grep -E "subject:|issuer:|expire date|SSL connection" || true
+          h=$(curl -s -o health.json -w "%{http_code}" "$BASE_URL/health"); echo "health: $h $(cat health.json)"
+          m=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE_URL/mcp" -H "Content-Type: application/json" \
+               -H "Accept: application/json, text/event-stream" -d '{"jsonrpc":"2.0","id":1,"method":"ping"}')
+          echo "mcp without token: $m"
+          [ "$h" = "200" ] && [ "$m" = "401" ]

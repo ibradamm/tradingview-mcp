@@ -11,10 +11,10 @@ and portfolio analytics.
 Claude.ai ──HTTPS──> /mcp (Streamable HTTP, token auth) ──> tools ──> data provider (Yahoo) + SQLite/Postgres + model store
 ```
 
-- 36 MCP tools (full list below)
+- 33 MCP tools (full list below)
 - Python 3.12, official MCP Python SDK 2.x (`MCPServer`, stateless Streamable HTTP, JSON responses)
 - pandas / NumPy / SciPy / scikit-learn, SQLAlchemy 2 (SQLite default, PostgreSQL supported)
-- 85 automated tests (`pytest`), CI on GitHub Actions (unit, PostgreSQL, Docker end-to-end, live data)
+- 84 automated tests (`pytest`), CI on GitHub Actions (unit, PostgreSQL, Docker end-to-end, live data)
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the design and [TEST_PROMPTS.md](TEST_PROMPTS.md) for prompts
 to try in Claude.
