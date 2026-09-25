@@ -1,0 +1,53 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "trading-mcp"
+version = "0.1.0"
+description = "Remote MCP server for market data, technical analysis, backtesting, ML and risk analysis (research / paper trading only)."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+dependencies = [
+    "mcp>=2.2,<3",
+    "uvicorn>=0.30",
+    "pydantic>=2.8",
+    "pydantic-settings>=2.4",
+    "pandas>=2.2",
+    "numpy>=2.0",
+    "scipy>=1.13",
+    "scikit-learn>=1.5",
+    "sqlalchemy>=2.0",
+    "joblib>=1.4",
+    "yfinance>=0.2.50",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.6",
+]
+postgres = ["psycopg[binary]>=3.2"]
+
+[project.scripts]
+trading-mcp = "trading_mcp.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/trading_mcp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-ra"
+markers = ["live: hits real market data APIs (deselect with -m 'not live')"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "N", "SIM"]
+ignore = ["N803", "N806", "UP047"]  # finance-style names (X, y); ParamSpec decorators
