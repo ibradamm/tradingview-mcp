@@ -101,3 +101,18 @@ def test_access_log_redacts_token(http, caplog):
         http.post("/mcp?key=test-token-0123456789abcdef", json=INIT, headers=HEADERS)
     assert "POST /mcp" in caplog.text
     assert "test-token-0123456789abcdef" not in caplog.text
+
+
+def test_hashed_tokens():
+    import hashlib
+
+    from trading_mcp.config import Settings
+
+    good = "another-token-with-enough-entropy-123"
+    digest = hashlib.sha256(good.encode()).hexdigest()
+    app = create_app(Settings(mcp_auth_token="", mcp_auth_token_sha256=[digest]))
+    with TestClient(app) as c:
+        assert c.post("/mcp", json=INIT, headers=HEADERS, params={"key": good}).status_code == 200
+        assert c.post("/mcp", json=INIT, headers=HEADERS, params={"key": digest}).status_code == 401
+    with pytest.raises(ValueError):
+        Settings(mcp_auth_token_sha256=["not-a-hash"])

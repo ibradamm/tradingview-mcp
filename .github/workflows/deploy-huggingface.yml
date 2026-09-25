@@ -1,0 +1,50 @@
+# Permanent deployment to a free Hugging Face Docker Space, then end-to-end verification.
+# One-time setup (GitHub repo -> Settings -> Secrets and variables -> Actions):
+#   secret   HF_TOKEN        Hugging Face token with write access
+#   secret   MCP_AUTH_TOKEN  your connector token (>= 24 random characters)
+#   variable HF_SPACE        e.g. your-hf-username/trading-mcp
+# Runs on every push to the default branch once configured, or manually.
+name: Deploy to Hugging Face Spaces
+
+on:
+  push:
+    branches: ["main", "master", "claude/mcp-trading-server-python-filmc5"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-hf
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      MCP_AUTH_TOKEN: ${{ secrets.MCP_AUTH_TOKEN }}
+      HF_SPACE: ${{ vars.HF_SPACE }}
+    steps:
+      - name: Check configuration
+        id: cfg
+        run: |
+          if [ -z "$HF_TOKEN" ] || [ -z "$MCP_AUTH_TOKEN" ] || [ -z "$HF_SPACE" ]; then
+            echo "Deployment not configured (HF_TOKEN, MCP_AUTH_TOKEN secrets and HF_SPACE variable). Skipping."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v5
+        if: steps.cfg.outputs.enabled == 'true'
+      - uses: astral-sh/setup-uv@v6
+        if: steps.cfg.outputs.enabled == 'true'
+      - name: Install tooling
+        if: steps.cfg.outputs.enabled == 'true'
+        run: |
+          uv venv --python 3.12
+          uv pip install -e . huggingface_hub
+      - name: Deploy and verify
+        if: steps.cfg.outputs.enabled == 'true'
+        run: .venv/bin/python scripts/deploy_hf.py

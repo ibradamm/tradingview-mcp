@@ -38,3 +38,22 @@ jobs:
       - name: Live data tests (real Yahoo Finance data, informative)
         continue-on-error: true
         run: .venv/bin/pytest -m live -v
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build image
+        run: docker build -t trading-mcp:ci .
+      - name: Run container and verify end-to-end (real market data)
+        run: |
+          python3 -m pip install -q httpx "mcp>=2.2,<3"
+          TOKEN=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
+          echo "::add-mask::$TOKEN"
+          docker run -d --name mcp -p 8000:8000 -e MCP_AUTH_TOKEN="$TOKEN" trading-mcp:ci
+          for i in $(seq 1 40); do curl -sf localhost:8000/health && break; sleep 1; done
+          docker inspect --format '{{.State.Health.Status}}' mcp || true
+          MCP_VERIFY_TOKEN="$TOKEN" python3 scripts/verify_endpoint.py http://localhost:8000
+          if docker logs mcp 2>&1 | grep -q "$TOKEN"; then echo "TOKEN LEAKED IN LOGS"; exit 1; fi
+          docker logs mcp 2>&1 | tail -20

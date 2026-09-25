@@ -1,0 +1,119 @@
+# Temporary public HTTPS endpoint for TESTING a build end-to-end (Cloudflare quick tunnel).
+# Not a hosting solution: the URL changes every run and the job stops after `duration_minutes`
+# (max 120). Use deploy-huggingface.yml (or render.yaml) for a permanent endpoint.
+#
+# Security (this repository is public): only the SHA-256 of the connector token is passed in;
+# the plain token never appears in inputs, logs or artifacts.
+name: Public demo endpoint (temporary)
+
+on:
+  workflow_dispatch:
+    inputs:
+      token_sha256:
+        description: "SHA-256 hex digest of the connector token"
+        required: true
+      duration_minutes:
+        description: "How long to keep the endpoint up (max 120)"
+        default: "60"
+
+permissions:
+  contents: write  # publishes the (public) URL + verification report to the status/public-demo branch
+
+concurrency:
+  group: public-demo
+  cancel-in-progress: true
+
+jobs:
+  serve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 135
+    env:
+      TOKEN_SHA256: ${{ inputs.token_sha256 }}
+      DURATION: ${{ inputs.duration_minutes }}
+      MARKET_DATA_PROVIDER: yahoo
+      DATABASE_URL: sqlite:///./data/trading_mcp.db
+      PORT: "8000"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Validate inputs
+        run: |
+          [[ "$TOKEN_SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo "token_sha256 must be 64 lowercase hex chars"; exit 1; }
+          [[ "$DURATION" =~ ^[0-9]+$ ]] && (( DURATION >= 5 && DURATION <= 120 )) || { echo "duration 5-120"; exit 1; }
+
+      - name: Install
+        run: |
+          uv venv --python 3.12
+          uv pip install -e .
+
+      - name: Create a verification token (masked, never stored)
+        run: |
+          VT=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
+          echo "::add-mask::$VT"
+          echo "MCP_VERIFY_TOKEN=$VT" >> "$GITHUB_ENV"
+          echo "VERIFY_SHA256=$(printf %s "$VT" | sha256sum | cut -d' ' -f1)" >> "$GITHUB_ENV"
+
+      - name: Start server
+        run: |
+          MCP_AUTH_TOKEN_SHA256="$TOKEN_SHA256,$VERIFY_SHA256" nohup .venv/bin/trading-mcp > server.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf localhost:8000/health && break; sleep 1; done
+          curl -sf localhost:8000/health
+
+      - name: Start Cloudflare quick tunnel
+        run: |
+          curl -fsSL -o cloudflared https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
+          chmod +x cloudflared
+          nohup ./cloudflared tunnel --no-autoupdate --url http://localhost:8000 > tunnel.log 2>&1 &
+          URL=""
+          for i in $(seq 1 60); do
+            URL=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' tunnel.log | head -1 || true)
+            [ -n "$URL" ] && break
+            sleep 1
+          done
+          [ -n "$URL" ] || { cat tunnel.log; exit 1; }
+          echo "PUBLIC_URL=$URL" >> "$GITHUB_ENV"
+          echo "::notice title=Public URL::$URL"
+
+      - name: Verify the PUBLIC https endpoint end-to-end (real market data)
+        run: |
+          sleep 10
+          .venv/bin/python scripts/verify_endpoint.py "$PUBLIC_URL" --json verification.json --retries 10
+
+      - name: Publish URL and verification report
+        env:
+          RUN_ID: ${{ github.run_id }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          export STARTED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          export UNTIL=$(date -u -d "+${DURATION} minutes" +%Y-%m-%dT%H:%M:%SZ)
+          python3 -c '
+          import json, os
+          report = json.load(open("verification.json"))
+          url = os.environ["PUBLIC_URL"]
+          json.dump({"mcp_url": url + "/mcp", "health_url": url + "/health", "started": os.environ["STARTED"],
+                     "expected_until": os.environ["UNTIL"], "run_id": os.environ["RUN_ID"],
+                     "commit": os.environ["COMMIT"], "verification": report}, open("/tmp/status.json", "w"), indent=2)
+          '
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch --orphan status-tmp
+          cp /tmp/status.json public-demo.json
+          git add public-demo.json
+          git commit -qm "Public demo endpoint (run $RUN_ID)"
+          git push -f origin HEAD:refs/heads/status/public-demo
+          echo "### Public demo endpoint" >> "$GITHUB_STEP_SUMMARY"
+          echo "MCP: \`$PUBLIC_URL/mcp\` (append \`?key=<your token>\`) - up until $UNTIL" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep serving
+        run: |
+          END=$(( $(date +%s) + DURATION * 60 ))
+          while [ "$(date +%s)" -lt "$END" ]; do
+            sleep 300
+            code=$(curl -s -o /dev/null -w "%{http_code}" "$PUBLIC_URL/health")
+            echo "$(date -u +%H:%M) public health: $code"
+          done
+
+      - name: Server log tail
+        if: always()
+        run: tail -n 60 server.log || true

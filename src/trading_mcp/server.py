@@ -17,7 +17,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from trading_mcp import __version__
-from trading_mcp.auth import TokenAuthMiddleware
+from trading_mcp.auth import TokenAuthMiddleware, sha256_hex
 from trading_mcp.config import Settings, get_settings
 from trading_mcp.security import AccessLogMiddleware, RateLimitMiddleware, SecurityHeadersMiddleware
 
@@ -48,7 +48,7 @@ def create_mcp() -> MCPServer:
                 "service": "trading-mcp",
                 "version": __version__,
                 "data_provider": settings.market_data_provider,
-                "auth_required": bool(settings.mcp_auth_token),
+                "auth_required": bool(settings.mcp_auth_token or settings.mcp_auth_token_sha256),
             }
         )
 
@@ -71,10 +71,13 @@ def create_app(settings: Settings | None = None) -> Starlette:
         transport_security=security,
         host=settings.host,
     )
+    hashes = list(settings.mcp_auth_token_sha256)
     if settings.mcp_auth_token:
         if len(settings.mcp_auth_token) < MIN_TOKEN_LENGTH:
             raise RuntimeError(f"MCP_AUTH_TOKEN must be at least {MIN_TOKEN_LENGTH} characters.")
-        app.add_middleware(TokenAuthMiddleware, token=settings.mcp_auth_token, protected_prefix="/mcp")
+        hashes.append(sha256_hex(settings.mcp_auth_token))
+    if hashes:
+        app.add_middleware(TokenAuthMiddleware, token_hashes=hashes, protected_prefix="/mcp")
     elif settings.allow_unauthenticated:
         logger.warning("MCP_AUTH_TOKEN is empty: /mcp is UNAUTHENTICATED (ALLOW_UNAUTHENTICATED=true).")
     else:
