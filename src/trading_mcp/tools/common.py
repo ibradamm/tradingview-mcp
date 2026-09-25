@@ -5,6 +5,7 @@ from __future__ import annotations
 import functools
 import logging
 import math
+import time
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any, ParamSpec, TypeVar
@@ -47,15 +48,33 @@ def safe_tool(fn: Callable[P, R]) -> Callable[P, R]:
 
     @functools.wraps(fn)
     def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        started, error = time.perf_counter(), None
         try:
             return fn(*args, **kwargs)
-        except ToolError:
+        except ToolError as exc:
+            error = str(exc)
             raise
         except (ValueError, KeyError, MarketDataError, FileNotFoundError) as exc:
+            error = f"{type(exc).__name__}: {exc}"
             logger.info("tool %s rejected: %s", fn.__name__, exc)
-            raise ToolError(f"{type(exc).__name__}: {exc}") from exc
+            raise ToolError(error) from exc
+        except Exception as exc:
+            error = f"{type(exc).__name__}: {exc}"
+            raise
+        finally:
+            _audit(fn.__name__, (time.perf_counter() - started) * 1000, error)
 
     return wrapper
+
+
+def _audit(tool: str, duration_ms: float, error: str | None) -> None:
+    logger.info("tool=%s duration_ms=%.0f ok=%s", tool, duration_ms, error is None)
+    try:
+        from trading_mcp.db.repository import record_tool_call
+
+        record_tool_call(tool, duration_ms, error is None, error)
+    except Exception:  # noqa: BLE001 - auditing must never break a tool
+        logger.debug("audit failed", exc_info=True)
 
 
 def parse_timeframe(value: str) -> Timeframe:

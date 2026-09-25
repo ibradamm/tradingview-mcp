@@ -12,17 +12,29 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: trading
+          POSTGRES_PASSWORD: trading
+          POSTGRES_DB: trading
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U trading" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_POSTGRES_URL: postgresql://trading:trading@localhost:5432/trading
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v6
       - name: Install
         run: |
           uv venv --python 3.12
-          uv pip install -e ".[dev]"
+          uv pip install -e ".[dev,postgres]"
       - name: Lint
         run: .venv/bin/ruff check src tests
-      - name: Unit tests (offline, synthetic data)
-        run: .venv/bin/pytest -m "not live"
+      - name: Unit tests (offline, synthetic data + PostgreSQL)
+        run: .venv/bin/pytest -m "not live" -rs
       - name: Live data tests (real Yahoo Finance data, informative)
         continue-on-error: true
         run: .venv/bin/pytest -m live -v

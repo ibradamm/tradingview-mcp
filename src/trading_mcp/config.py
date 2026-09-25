@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./data/trading_mcp.db"
     model_dir: Path = Path("./data/models")
     cache_ttl_seconds: int = 300
+    persist_bars: bool = True
     cors_origins: CsvList = ["https://claude.ai", "https://claude.com"]
     allowed_hosts: CsvList = []
     host: str = "0.0.0.0"

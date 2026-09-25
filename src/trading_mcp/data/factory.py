@@ -1,26 +1,36 @@
-"""Provider selection and an in-memory TTL cache wrapper."""
+"""Provider selection, in-memory TTL cache and persistent fallback cache."""
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from datetime import datetime
 from functools import lru_cache
+from typing import Protocol
 
 import pandas as pd
 
 from trading_mcp.config import get_settings
 from trading_mcp.data.base import MarketDataProvider, Quote, SymbolMatch, Timeframe
 
+logger = logging.getLogger(__name__)
+
+
+class BarStoreProtocol(Protocol):
+    def save_bars(self, symbol: str, timeframe: str, df: pd.DataFrame) -> None: ...
+
+    def load_bars(self, symbol: str, timeframe: str, start: datetime | None, end: datetime | None) -> pd.DataFrame: ...
+
 
 class CachedProvider(MarketDataProvider):
     """Decorates any provider with a short-lived in-memory cache for history requests.
 
-    Quotes are never cached (they must stay fresh). Optionally persists history to the
-    database through ``store`` (see :mod:`trading_mcp.db.repository`).
+    Quotes are never cached (they must stay fresh). When a ``store`` is given, fetched bars are
+    persisted and served back (flagged as cached) if the upstream provider fails.
     """
 
-    def __init__(self, inner: MarketDataProvider, ttl_seconds: int, store: object | None = None) -> None:
+    def __init__(self, inner: MarketDataProvider, ttl_seconds: int, store: BarStoreProtocol | None = None) -> None:
         self.inner = inner
         self.ttl = ttl_seconds
         self.store = store
@@ -44,26 +54,51 @@ class CachedProvider(MarketDataProvider):
         start: datetime | None = None,
         end: datetime | None = None,
     ) -> pd.DataFrame:
-        if self.ttl <= 0:
-            return self.inner.get_history(ticker, timeframe, start, end)
-        # Round the default "now" end to the TTL bucket so consecutive calls share an entry.
-        key = (ticker.upper(), timeframe.value, str(start), str(end) if end else f"now/{int(time.time() // self.ttl)}")
+        key_ticker = ticker.strip().upper()
+        bucket = f"now/{int(time.time() // self.ttl)}" if self.ttl > 0 else "nocache"
+        key = (key_ticker, timeframe.value, str(start), str(end) if end else bucket)
         now = time.monotonic()
-        with self._lock:
-            hit = self._cache.get(key)
-            if hit and now - hit[0] < self.ttl:
-                return hit[1].copy()
-        df = self.inner.get_history(ticker, timeframe, start, end)
-        with self._lock:
-            self._cache[key] = (now, df)
-            if len(self._cache) > 512:  # crude bound on memory
-                oldest = min(self._cache, key=lambda k: self._cache[k][0])
-                del self._cache[oldest]
+        if self.ttl > 0:
+            with self._lock:
+                hit = self._cache.get(key)
+                if hit and now - hit[0] < self.ttl:
+                    return _copy(hit[1])
+        try:
+            df = self.inner.get_history(ticker, timeframe, start, end)
+        except Exception as exc:
+            fallback = self._from_store(key_ticker, timeframe, start, end)
+            if fallback is None:
+                raise
+            logger.warning("provider failed for %s %s (%s); serving database cache", ticker, timeframe.value, exc)
+            fallback.attrs["notes"] = [f"Live provider failed ({exc}); served from the database cache - may be stale."]
+            return fallback
+        if self.ttl > 0:
+            with self._lock:
+                self._cache[key] = (now, df)
+                if len(self._cache) > 512:  # crude bound on memory
+                    oldest = min(self._cache, key=lambda k: self._cache[k][0])
+                    del self._cache[oldest]
         if self.store is not None:
-            self.store.save_bars(df.attrs.get("symbol", ticker.upper()), timeframe.value, df)  # type: ignore[attr-defined]
-        out = df.copy()
-        out.attrs = dict(df.attrs)
-        return out
+            self.store.save_bars(key_ticker, timeframe.value, df)
+        return _copy(df)
+
+    def _from_store(
+        self, ticker: str, timeframe: Timeframe, start: datetime | None, end: datetime | None
+    ) -> pd.DataFrame | None:
+        if self.store is None:
+            return None
+        try:
+            df = self.store.load_bars(ticker, timeframe.value, start, end)
+        except Exception:  # noqa: BLE001
+            logger.exception("database cache lookup failed")
+            return None
+        return df if not df.empty else None
+
+
+def _copy(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    out.attrs = {k: (list(v) if isinstance(v, list) else v) for k, v in df.attrs.items()}
+    return out
 
 
 def build_provider(kind: str) -> MarketDataProvider:
@@ -81,6 +116,11 @@ def build_provider(kind: str) -> MarketDataProvider:
 
 @lru_cache
 def get_provider() -> MarketDataProvider:
-    """Process-wide provider configured by ``MARKET_DATA_PROVIDER``."""
+    """Process-wide provider configured by ``MARKET_DATA_PROVIDER`` (+ caches)."""
     settings = get_settings()
-    return CachedProvider(build_provider(settings.market_data_provider), settings.cache_ttl_seconds)
+    store = None
+    if settings.persist_bars:
+        from trading_mcp.db.repository import BarStore
+
+        store = BarStore()
+    return CachedProvider(build_provider(settings.market_data_provider), settings.cache_ttl_seconds, store)

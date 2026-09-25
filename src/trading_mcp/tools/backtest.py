@@ -117,7 +117,27 @@ def walk_forward_backtest(
     return payload
 
 
+@safe_tool
+def list_saved_runs(kind: str = "all_backtests", limit: int = 20) -> dict[str, Any]:
+    """History stored in the database. kind: all_backtests, backtest, walk_forward or ml (ML experiments)."""
+    from trading_mcp.db.repository import list_runs
+
+    if kind not in {"all_backtests", "backtest", "walk_forward", "ml"}:
+        raise ValueError("kind must be all_backtests, backtest, walk_forward or ml")
+    return clean({"kind": kind, "runs": list_runs(kind, max(1, min(int(limit), 100)))})
+
+
+@safe_tool
+def get_backtest_run(run_id: int) -> dict[str, Any]:
+    """Full stored result of a previous backtest or walk-forward run (by run_id)."""
+    from trading_mcp.db.repository import get_run
+
+    return get_run(int(run_id))
+
+
 def register(mcp: MCPServer) -> None:
     mcp.add_tool(list_strategies, annotations=ToolAnnotations(readOnlyHint=True))
+    mcp.add_tool(list_saved_runs, annotations=ToolAnnotations(readOnlyHint=True))
+    mcp.add_tool(get_backtest_run, annotations=ToolAnnotations(readOnlyHint=True))
     for fn in (backtest_strategy, walk_forward_backtest):
         mcp.add_tool(fn, annotations=ANNOTATIONS)
