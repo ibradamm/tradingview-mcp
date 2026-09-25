@@ -19,8 +19,10 @@ from starlette.responses import JSONResponse
 from trading_mcp import __version__
 from trading_mcp.auth import TokenAuthMiddleware
 from trading_mcp.config import Settings, get_settings
+from trading_mcp.security import AccessLogMiddleware, RateLimitMiddleware, SecurityHeadersMiddleware
 
 logger = logging.getLogger(__name__)
+MIN_TOKEN_LENGTH = 24
 
 INSTRUCTIONS = """\
 Financial research server: market data, technical indicators, multi-timeframe analysis, screener,
@@ -70,9 +72,16 @@ def create_app(settings: Settings | None = None) -> Starlette:
         host=settings.host,
     )
     if settings.mcp_auth_token:
+        if len(settings.mcp_auth_token) < MIN_TOKEN_LENGTH:
+            raise RuntimeError(f"MCP_AUTH_TOKEN must be at least {MIN_TOKEN_LENGTH} characters.")
         app.add_middleware(TokenAuthMiddleware, token=settings.mcp_auth_token, protected_prefix="/mcp")
+    elif settings.allow_unauthenticated:
+        logger.warning("MCP_AUTH_TOKEN is empty: /mcp is UNAUTHENTICATED (ALLOW_UNAUTHENTICATED=true).")
     else:
-        logger.warning("MCP_AUTH_TOKEN is empty: /mcp is UNAUTHENTICATED. Only acceptable for local development.")
+        raise RuntimeError("MCP_AUTH_TOKEN is not set. Set it, or ALLOW_UNAUTHENTICATED=true for local development.")
+    # Starlette runs the LAST added middleware first: order below = log -> headers -> CORS -> rate limit -> auth.
+    if settings.rate_limit_per_minute > 0:
+        app.add_middleware(RateLimitMiddleware, per_minute=settings.rate_limit_per_minute, prefix="/mcp")
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -80,4 +89,6 @@ def create_app(settings: Settings | None = None) -> Starlette:
         allow_headers=["Authorization", "Content-Type", "Mcp-Session-Id", "Mcp-Protocol-Version", "Last-Event-ID"],
         expose_headers=["Mcp-Session-Id"],
     )
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(AccessLogMiddleware)
     return app

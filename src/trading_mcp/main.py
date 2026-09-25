@@ -23,6 +23,8 @@ def main() -> None:
         log_level=settings.log_level.lower(),
         proxy_headers=True,
         forwarded_allow_ips="*",
+        access_log=False,  # uvicorn's access log would record ?key=<token>; AccessLogMiddleware redacts it
+        server_header=False,
     )
 
 

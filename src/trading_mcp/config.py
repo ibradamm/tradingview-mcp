@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     mcp_auth_token: str = Field(default="", repr=False)
+    allow_unauthenticated: bool = False  # must be set explicitly to run without a token (local dev only)
+    rate_limit_per_minute: int = 120
     market_data_provider: Literal["yahoo", "synthetic"] = "yahoo"
     database_url: str = "sqlite:///./data/trading_mcp.db"
     model_dir: Path = Path("./data/models")

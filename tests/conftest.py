@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 
 os.environ["MARKET_DATA_PROVIDER"] = "synthetic"
-os.environ["MCP_AUTH_TOKEN"] = "test-token"
+os.environ["MCP_AUTH_TOKEN"] = "test-token-0123456789abcdef"
 os.environ["CACHE_TTL_SECONDS"] = "0"
 
 

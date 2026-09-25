@@ -14,6 +14,7 @@ INIT = {
     "method": "initialize",
     "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "t", "version": "1"}},
 }
+TOKEN = "test-token-0123456789abcdef"
 HEADERS = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
 
 
@@ -28,7 +29,7 @@ def test_health_is_public(http):
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "ok" and body["auth_required"] is True
-    assert "test-token" not in r.text
+    assert "test-token-0123456789abcdef" not in r.text
 
 
 def test_mcp_requires_token(http):
@@ -37,7 +38,7 @@ def test_mcp_requires_token(http):
 
 
 @pytest.mark.parametrize(
-    "auth", [{"params": {"key": "test-token"}}, {"headers": {"Authorization": "Bearer test-token"}}]
+    "auth", [{"params": {"key": TOKEN}}, {"headers": {"Authorization": f"Bearer {TOKEN}"}}]
 )
 def test_mcp_accepts_token_in_query_or_header(http, auth):
     headers = {**HEADERS, **auth.get("headers", {})}
@@ -65,3 +66,38 @@ async def test_market_tools_via_mcp_client():
 
         bad = await client.call_tool("get_historical_data", {"ticker": "NVDA", "timeframe": "3h"})
         assert bad.is_error and "Unsupported timeframe" in bad.content[0].text
+
+
+def test_security_headers(http):
+    r = http.get("/health")
+    assert r.headers["x-content-type-options"] == "nosniff"
+    assert r.headers["cache-control"] == "no-store"
+
+
+def test_refuses_to_start_without_token(monkeypatch):
+    from trading_mcp.config import Settings
+
+    with pytest.raises(RuntimeError, match="MCP_AUTH_TOKEN is not set"):
+        create_app(Settings(mcp_auth_token=""))
+    with pytest.raises(RuntimeError, match="at least"):
+        create_app(Settings(mcp_auth_token="short"))
+    assert create_app(Settings(mcp_auth_token="", allow_unauthenticated=True)) is not None
+
+
+def test_rate_limit():
+    from trading_mcp.config import Settings
+
+    app = create_app(Settings(mcp_auth_token="x" * 30, rate_limit_per_minute=3))
+    with TestClient(app) as c:
+        codes = [c.post("/mcp", json=INIT, headers=HEADERS).status_code for _ in range(5)]
+        assert [c.get("/health").status_code for _ in range(5)] == [200] * 5  # /health is never rate limited
+    assert codes[:3] == [401, 401, 401] and codes[3:] == [429, 429]
+
+
+def test_access_log_redacts_token(http, caplog):
+    import logging
+
+    with caplog.at_level(logging.INFO, logger="trading_mcp.access"):
+        http.post("/mcp?key=test-token-0123456789abcdef", json=INIT, headers=HEADERS)
+    assert "POST /mcp" in caplog.text
+    assert "test-token-0123456789abcdef" not in caplog.text
