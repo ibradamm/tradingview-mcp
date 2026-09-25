@@ -34,6 +34,9 @@ class CachedProvider(MarketDataProvider):
     def search_symbol(self, query: str, limit: int = 10) -> list[SymbolMatch]:
         return self.inner.search_symbol(query, limit)
 
+    def get_market_cap(self, ticker: str) -> float | None:
+        return self.inner.get_market_cap(ticker)
+
     def get_history(
         self,
         ticker: str,

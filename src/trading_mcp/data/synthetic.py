@@ -88,6 +88,9 @@ class SyntheticProvider(MarketDataProvider):
         df.attrs.update({"symbol": ticker.upper(), "source": self.name, "notes": ["FAKE DATA"], "adjusted": False})
         return df
 
+    def get_market_cap(self, ticker: str) -> float | None:
+        return float(1e9 * (1 + _seed(ticker.upper(), "cap") % 3000))
+
     def search_symbol(self, query: str, limit: int = 10) -> list[SymbolMatch]:
         q = query.lower()
         return [

@@ -108,6 +108,10 @@ class MarketDataProvider(ABC):
     def search_symbol(self, query: str, limit: int = 10) -> list[SymbolMatch]:
         """Search symbols by ticker or company name."""
 
+    def get_market_cap(self, ticker: str) -> float | None:
+        """Market capitalisation in the listing currency, or None when the source has no fundamentals."""
+        return None
+
 
 def resolve_window(
     timeframe: Timeframe, start: datetime | None, end: datetime | None

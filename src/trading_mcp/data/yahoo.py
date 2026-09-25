@@ -112,6 +112,13 @@ class YahooProvider(MarketDataProvider):
         df.attrs.update({"symbol": symbol, "source": self.name, "notes": notes, "adjusted": True})
         return df
 
+    def get_market_cap(self, ticker: str) -> float | None:
+        try:
+            cap = yf.Ticker(to_yahoo_symbol(ticker)).fast_info.get("marketCap")
+        except Exception:  # noqa: BLE001 - not every asset class has a market cap
+            return None
+        return float(cap) if cap else None
+
     def search_symbol(self, query: str, limit: int = 10) -> list[SymbolMatch]:
         search = yf.Search(query, max_results=limit, news_count=0, lists_count=0, raise_errors=True)
         return [

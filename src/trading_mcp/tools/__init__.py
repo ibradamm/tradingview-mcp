@@ -6,7 +6,7 @@ from mcp.server.mcpserver import MCPServer
 
 
 def register_all(mcp: MCPServer) -> None:
-    from trading_mcp.tools import market, technical
+    from trading_mcp.tools import analysis, market, technical
 
-    for module in (market, technical):
+    for module in (market, technical, analysis):
         module.register(mcp)
